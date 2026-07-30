@@ -29,8 +29,12 @@ def main() -> None:
     if not langfuse.auth_check():
         raise SystemExit("langfuse auth failed, check LANGFUSE_* in .env")
 
+    # the sdk already retries 429s and 5xx twice with backoff. a 150 call batch is long enough
+    # that two is not always enough, and a call lost to a transient 529 is a hole in the
+    # denominator rather than a result. it still gives up eventually, and when it does the row
+    # says call_failed rather than quietly not existing.
     runner.run(
-        client=Anthropic(),
+        client=Anthropic(max_retries=5),
         langfuse=langfuse,
         run_id=args.run_id or runner.new_run_id(),
         models=tuple(args.models),
