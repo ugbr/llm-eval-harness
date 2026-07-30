@@ -101,6 +101,41 @@ def test_tokens_are_reported_from_the_response():
     assert "cost_details" not in langfuse.generation.updates
 
 
+def test_receipt_id_is_on_the_observation_too_not_just_the_trace():
+    """Propagated metadata only reaches the trace.
+
+    Any view that filters observations is blind to it unless it is set here as well, which is
+    how the session view ends up returning one result for a receipt that has three.
+    """
+    _, langfuse = run(GOOD)
+
+    assert langfuse.opened_with["metadata"]["receipt_id"] == "000"
+    assert langfuse.generation.updates["metadata"]["receipt_id"] == "000"
+
+
+def test_a_transport_failure_still_reports_its_trace():
+    langfuse = FakeLangfuse()
+
+    def blow_up(**kwargs):
+        raise RuntimeError("529 overloaded")
+
+    client = SimpleNamespace(messages=SimpleNamespace(create=blow_up))
+    with pytest.raises(tracing.TracedCallFailed) as caught:
+        tracing.traced_extract(
+            text="SOME OCR TEXT",
+            client=client,
+            model="claude-opus-5",
+            receipt_id="005",
+            run_id="run-1",
+            langfuse=langfuse,
+        )
+
+    assert caught.value.trace_id == "trace-abc"
+    assert isinstance(caught.value.cause, RuntimeError)
+    # the prompt was already on the span, so the trace says what we tried to send
+    assert "SOME OCR TEXT" in langfuse.opened_with["input"]
+
+
 @pytest.mark.parametrize("stop_reason", ["end_turn", "max_tokens"])
 def test_stop_reason_reaches_the_trace(stop_reason):
     """Truncation is its own failure mode, and it is invisible unless this is recorded."""

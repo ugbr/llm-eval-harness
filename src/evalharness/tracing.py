@@ -26,6 +26,19 @@ class TracedExtraction:
     trace_id: str
 
 
+class TracedCallFailed(Exception):
+    """The call never returned, but it was traced anyway.
+
+    Carries the trace id so a failed row can still point at its trace. The trace is worth
+    reaching: it has the prompt on it, because that goes on before the call.
+    """
+
+    def __init__(self, trace_id: str, cause: Exception):
+        super().__init__(f"{type(cause).__name__}: {cause}")
+        self.trace_id = trace_id
+        self.cause = cause
+
+
 def traced_extract(
     *,
     text: str,
@@ -48,18 +61,30 @@ def traced_extract(
             session_id=run_id,
             version=target.TARGET_VERSION,
             metadata={"receipt_id": receipt_id},
+            # the model is on the generation already, but that is not reachable from any surface
+            # that lists traces. as a tag it filters in one click and shows up in the list, which
+            # is what paging through 150 of these by hand actually needs.
+            tags=[model],
         ),
         langfuse.start_as_current_observation(
             name="extract-receipt",
             as_type="generation",
             input=target.build_prompt(text),
             model=model,
+            # propagated metadata lands on the trace, not on the observation, so any view that
+            # filters observations cannot see receipt_id unless it is also set here.
+            metadata={"receipt_id": receipt_id},
             # worth recording even though it never varies today. when it does vary, every trace
             # from before the change already says what it was.
             model_parameters={"max_tokens": target.MAX_TOKENS, "thinking": "disabled"},
         ) as generation,
     ):
-        extraction = target.extract(text, client=client, model=model)
+        try:
+            extraction = target.extract(text, client=client, model=model)
+        except Exception as exc:
+            # the span still records the error and still has the prompt on it. all this adds is
+            # a way for the caller to find it again.
+            raise TracedCallFailed(generation.trace_id, exc) from exc
 
         generation.update(
             output=extraction.raw_output,
@@ -70,7 +95,7 @@ def traced_extract(
                 "input": extraction.input_tokens,
                 "output": extraction.output_tokens,
             },
-            metadata={"stop_reason": extraction.stop_reason},
+            metadata={"receipt_id": receipt_id, "stop_reason": extraction.stop_reason},
             # a rejected extraction is a result, not a crash, but it is not a success either.
             # langfuse already has a level and a status message for this, so use them instead of
             # inventing a second status concept that no ui and no filter knows about.

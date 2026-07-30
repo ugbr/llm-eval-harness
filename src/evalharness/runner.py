@@ -76,12 +76,15 @@ def _failed_row(call: Call, run_id: str, exc: Exception) -> dict[str, Any]:
     Kept deliberately distinct from invalid_output. A rate limit or a 5xx says nothing about
     extraction quality, and folding the two together would put infrastructure noise straight
     into the failure counts.
+
+    It still gets a trace_id where there is one. These are the rows you most want to open, so
+    leaving them unable to point at their own trace was backwards.
     """
     return {
         "run_id": run_id,
         "receipt_id": call.receipt_id,
         "model": call.model,
-        "trace_id": None,
+        "trace_id": exc.trace_id if isinstance(exc, tracing.TracedCallFailed) else None,
         "target_version": target.TARGET_VERSION,
         "status": "call_failed",
         "error": f"{type(exc).__name__}: {exc}",
