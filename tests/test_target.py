@@ -22,6 +22,28 @@ def test_valid_output_parses_into_typed_fields():
 
 
 @pytest.mark.parametrize(
+    "written,expected",
+    [
+        ("60.30", Decimal("60.30")),
+        ("RM 60.30", Decimal("60.30")),
+        ("RM60.30", Decimal("60.30")),
+        ("$8.20", Decimal("8.20")),
+        (" $8.20 ", Decimal("8.20")),
+    ],
+)
+def test_a_currency_prefix_is_accepted(written, expected):
+    """Receipts print totals with a symbol and the models copy it.
+
+    A first run rejected 33 of 150 outputs on this alone, every one of which matched ground
+    truth once the symbol came off. The ruler was wrong, not the model.
+    """
+    r = Receipt.model_validate_json(
+        f'{{"company": "A", "address": "B", "date": "2019-02-01", "total": "{written}"}}'
+    )
+    assert r.total == expected
+
+
+@pytest.mark.parametrize(
     "why,bad_json",
     [
         ("zero total", '{"company":"A","address":"B","date":"2019-02-01","total":"0.00"}'),

@@ -6,10 +6,10 @@ regression.
 
 ## Status
 
-Early. The eval set is vendored, the extraction target runs against it, and one traced call
-works end to end with tokens, latency and cost. Nothing is scored yet, and the full run is not
-wired up. This file grows as the repo does, so if something is missing here it does not exist
-yet rather than being undocumented.
+Early. A full run works: every receipt in the eval set against every model, each call traced,
+one row per call written to `results/`. Nothing is scored yet, so there is no accuracy number
+here and no CI gate. This file grows as the repo does, so if something is missing here it does
+not exist yet rather than being undocumented.
 
 ## Commands
 
@@ -17,6 +17,8 @@ yet rather than being undocumented.
 - `uv run ruff check .` to lint
 - `uv run pytest` to run the tests
 - `uv run python scripts/trace_one_call.py` to send one receipt and print its trace URL
+- `uv run python scripts/run_eval.py` for a full run. `--limit N` and `--models <id>...` cut it
+  down, which is how to check a change without paying for the whole set.
 
 ## Layout
 
@@ -38,6 +40,15 @@ Copy `.env.example` to `.env` and fill it before running anything.
 - The system under test lives behind one interface in `target.py`. It reports the exact prompt
   and the raw output, including when validation fails, because a failure you cannot read is a
   failure you cannot categorise. Keep that contract if you swap the implementation.
+- `target.py` does not import langfuse. Tracing is the caller's job and lives in `tracing.py`,
+  so the thing being measured stays independent of the thing measuring it.
+- One model call is one trace. The trace is the unit you filter, score and annotate, and
+  receipts are independent, so there is no sequence worth nesting. A run groups its traces by
+  `run_id`, carried as the Langfuse session.
+- A result row's `status` separates `invalid_output` (the model returned something the schema
+  rejected, which is a result worth scoring) from `call_failed` (a rate limit or a 5xx, which
+  says nothing about extraction quality). Do not collapse those two, it puts infrastructure
+  noise into the failure counts.
 - Never commit `.env`. It holds the Anthropic API key and the Langfuse keys.
 - Eval outputs are generated artifacts. Do not commit them, and do not hand-edit a scored result
   to make a number look better.

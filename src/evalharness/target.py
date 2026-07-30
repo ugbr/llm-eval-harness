@@ -10,22 +10,36 @@ caller is the evidence: the exact prompt, the raw text that came back, tokens, l
 validation failure.
 """
 
+import re
 import time
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, Any
 
 from anthropic import Anthropic
 from pydantic import BaseModel, ValidationError, WithJsonSchema, field_validator
 
-# bump when the prompt below changes. this rides on every trace, so a run says what produced it
-# instead of you keeping a notebook that maps run ids to prompts.
-PROMPT_VERSION = "v1"
+# bump when anything in this module changes what the target does: the prompt, the schema, or the
+# validation rules. it rides on every trace and every result row, so a run says what produced it
+# instead of you keeping a notebook that maps run ids to code.
+#
+# v2 accepts a currency prefix on total. under v1 that rejected 33 of 150 outputs, all of which
+# matched ground truth once the symbol came off.
+TARGET_VERSION = "v2"
 
 PROMPT = "Extract the fields from this receipt:\n\n{text}"
 
 MAX_TOKENS = 1024
+
+
+def build_prompt(text: str) -> str:
+    """The exact string this target sends for a given receipt.
+
+    Split out so a caller can record what is about to be sent before sending it. If the call
+    then dies on a rate limit, the trace still says what we tried.
+    """
+    return PROMPT.format(text=text)
 
 
 class Receipt(BaseModel):
@@ -46,6 +60,20 @@ class Receipt(BaseModel):
     # way, so both sides of a comparison start as strings.
     total: Annotated[Decimal, WithJsonSchema({"type": "string"})]
     date: date
+
+    @field_validator("total", mode="before")
+    @classmethod
+    def strip_currency(cls, value: Any) -> Any:
+        """Accept a total written the way the receipt writes it.
+
+        Receipts in this set print totals as "RM 60.30" or "$8.20", and the models copy that
+        faithfully. Without this the extractor rejects a correct answer over formatting, and it
+        rejects the whole document with it, so three fields it got right go down with the one
+        it rendered differently. The symbol is not thrown away, raw_output still has it.
+        """
+        if isinstance(value, str):
+            return re.sub(r"^(RM|\$)\s*", "", value.strip(), flags=re.IGNORECASE)
+        return value
 
     @field_validator("total")
     @classmethod
@@ -91,7 +119,7 @@ def extract(text: str, client: Anthropic, model: str) -> Extraction:
     Transport failures (rate limits, 5xx, timeouts) are left to propagate. They say nothing
     about extraction quality, so the caller isolates them per call rather than scoring them.
     """
-    prompt = PROMPT.format(text=text)
+    prompt = build_prompt(text)
 
     start = time.perf_counter()
     response = client.messages.create(
