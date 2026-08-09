@@ -7,10 +7,10 @@ regression.
 ## Status
 
 Early. A full run works: every receipt in the eval set against every model, each call traced,
-one row per call written to `results/`. On top of that there is a review surface for reading
-those calls by hand and writing a note on each. Nothing is scored yet, so there is no accuracy
-number here and no CI gate. This file grows as the repo does, so if something is missing here it
-does not exist yet rather than being undocumented.
+one row per call written to `results/`. On top of that there are two review surfaces, a terminal
+one and a local web one, for reading those calls by hand and writing a note on each. Nothing is
+scored yet, so there is no accuracy number here and no CI gate. This file grows as the repo does,
+so if something is missing here it does not exist yet rather than being undocumented.
 
 ## Commands
 
@@ -22,6 +22,9 @@ does not exist yet rather than being undocumented.
   down, which is how to check a change without paying for the whole set.
 - `uv run python scripts/review.py` to read a run's calls one at a time and note each one.
   Resumable, and filterable with `--models`, `--status`, `--receipts` and `--limit`.
+- `uv run python scripts/review_web.py` for the same thing in a browser, on
+  http://127.0.0.1:8765. Same filters, same notes file. Easier on a long receipt, because the
+  input and the field comparison sit side by side and the text is selectable.
 
 ## Layout
 
@@ -60,6 +63,16 @@ Copy `.env.example` to `.env` and fill it before running anything.
 - The comparison shown while reviewing is raw string equality, not normalised, and there is a
   test pinning that. Normalising encodes decisions about what counts as the same value, and
   while reading calls those decisions are the thing being discovered. Normalise when scoring.
+- The two review surfaces are views over `review.py` and `notes.py` and hold no state of their
+  own. Adding a third should mean one new module and no changes to those two. If that stops
+  being true, the seam has moved and it is worth asking why before working around it.
+- Both surfaces write the same fixed sentence for a call that matches on all four fields, and
+  a test pins the string. They feed one notes file that gets read and clustered by hand, so two
+  spellings of the same observation would silently split a count in half.
+- That shortcut currently cannot fire, and that is expected rather than broken. The comparison
+  is unnormalised, so a date always differs in format and no call matches on all four fields.
+  It becomes reachable again if normalisation ever moves into the reading surface, which is a
+  decision, not a cleanup.
 - Reading order is receipt then model, so any prefix is balanced across models. The runner
   submits model by model, so file order would hand you one model's failure modes and nothing
   would say the others were missing.
