@@ -9,8 +9,10 @@ regression.
 Early. A full run works: every receipt in the eval set against every model, each call traced,
 one row per call written to `results/`. On top of that there are two review surfaces, a terminal
 one and a local web one, for reading those calls by hand and writing a note on each. Nothing is
-scored yet, so there is no accuracy number here and no CI gate. This file grows as the repo does,
-so if something is missing here it does not exist yet rather than being undocumented.
+scored automatically yet and there is no CI gate. There are accuracy numbers, but they live in
+`docs/failure-taxonomy.md` and were derived by hand from one model's calls. This file grows as
+the repo does, so if something is missing here it does not exist yet rather than being
+undocumented.
 
 ## Commands
 
@@ -35,6 +37,8 @@ so if something is missing here it does not exist yet rather than being undocume
 - `results/`: generated eval runs and trace exports. Gitignored, regenerate rather than commit.
 - `notes/`: hand-written notes on individual calls. Committed, unlike `results/`, because
   nothing regenerates them. See `notes/README.md`.
+- `docs/`: findings written up from the runs. Currently the failure taxonomy, which is what the
+  scoring work is built against.
 
 Copy `.env.example` to `.env` and fill it before running anything.
 
@@ -63,6 +67,10 @@ Copy `.env.example` to `.env` and fill it before running anything.
 - The comparison shown while reviewing is raw string equality, not normalised, and there is a
   test pinning that. Normalising encodes decisions about what counts as the same value, and
   while reading calls those decisions are the thing being discovered. Normalise when scoring.
+- The artifact/real/ceiling grouping in `docs/failure-taxonomy.md` is the normalisation spec, not
+  commentary. Which group a mode sits in decides whether the normaliser erases it, and that moved
+  the pass rate by 14 points on one mode alone. Change a grouping and you have changed the
+  accuracy number, so change it deliberately and say why.
 - The two review surfaces are views over `review.py` and `notes.py` and hold no state of their
   own. Adding a third should mean one new module and no changes to those two. If that stops
   being true, the seam has moved and it is worth asking why before working around it.
